@@ -47,13 +47,16 @@ public class NettyClient {
                         protected void initChannel(SocketChannel ch) throws Exception {
                             NettyCodecAdapter nettyCodecAdapter = new NettyCodecAdapter();
                             ch.pipeline().addLast(nettyCodecAdapter.getClientDecoder());
+                            ch.pipeline().addLast(nettyCodecAdapter.getSimpleRpcEncoder());
                             ch.pipeline().addLast(rpcClientHandler);
                         }
                     });
-            ChannelFuture future = b.connect().sync(); // 建立服务端到远程的连接
-            channel  = future.channel();    //获取channel
+            // 建立服务端到远程的连接
+            ChannelFuture future = b.connect().sync();
+            //获取channel
+            channel  = future.channel();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            group.shutdownGracefully();
         }
     }
 
@@ -74,7 +77,7 @@ public class NettyClient {
         if (args != null && args.length > 0 ){
             sb.append(args.toString());
         }
-        return channel.writeAndFlush(Unpooled.copiedBuffer(sb.toString(), CharsetUtil.UTF_8));
+        return channel.writeAndFlush(sb.toString());
     }
 
 }

@@ -55,7 +55,7 @@ public class NettyServer {
                 NettyCodecAdapter adapter = new NettyCodecAdapter();
                 ChannelPipeline p = ch.pipeline();
                 p.addLast("decoder", adapter.getServerDecoder());
-                p.addLast("encoder", adapter.getServerEncoder());
+                p.addLast("encoder", adapter.getSimpleRpcEncoder());
                 p.addLast("handler", nettyHandler);
             }
         });

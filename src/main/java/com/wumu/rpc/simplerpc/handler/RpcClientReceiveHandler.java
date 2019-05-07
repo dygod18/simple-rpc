@@ -17,4 +17,17 @@ public class RpcClientReceiveHandler extends SimpleChannelInboundHandler{
         LocalCache localCache = LocalCache.getInstance();
         localCache.putResult(result.getInvokeId(), result.getInvokeResult());
     }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        System.out.println(("client caught exception..." + cause));
+        ctx.close();
+    }
+
+//    @Override
+//    public void channelReadComplete(ChannelHandlerContext ctx) {
+//        //关闭客户端连接到服务端的channel 这里是会引发tcp四次挥手
+//        ctx.close();
+//        System.out.println("channel 已经关闭,id:" + ctx.channel().id());
+//    }
 }

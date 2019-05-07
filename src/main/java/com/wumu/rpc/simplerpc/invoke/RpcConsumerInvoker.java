@@ -35,6 +35,7 @@ public class RpcConsumerInvoker<T> implements Invoker<T>{
         //轮询直到获取到对应的result
         do{
             Thread.sleep(100);
+            System.out.println("wait for server response, invoke id : " + invocation.getInvokeId());
         }while (localCache.getResut(invocation.getInvokeId()) == null);
 
         return localCache.getResut(invocation.getInvokeId());

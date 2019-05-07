@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.MessageToByteEncoder;
 
 import java.util.ArrayList;
@@ -17,52 +18,12 @@ import java.util.List;
  */
 public class NettyCodecAdapter {
 
-    private final ChannelHandler serverEncoder = new ServerEncoder();
-    private final ChannelHandler serverDecoder = new ServerDecoder();
+    private static final int HEAD_LENGTH = 4;
 
-    private final ChannelHandler clientDecoder = new ClientDecoder();
-
-    public ChannelHandler getServerEncoder() {
-        return serverEncoder;
-    }
-
-    public ChannelHandler getServerDecoder() {
-        return serverDecoder;
-    }
-
-    public ChannelHandler getClientDecoder() {
-        return clientDecoder;
-    }
-
-    private class ServerEncoder extends MessageToByteEncoder {
-
+    private final ChannelHandler simpleRpcEncoder = new SimpleRpcEncoder();
+    private final ChannelHandler serverDecoder = new SimpleRpcDecoder() {
         @Override
-        protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) throws Exception {
-            out.writeBytes(msg.toString().getBytes());
-        }
-    }
-
-    private class ServerDecoder extends ChannelInboundHandlerAdapter {
-
-        /**
-         * 解码器，将msg解码为invocation
-         *
-         * @param ctx
-         * @param msg
-         */
-        @Override
-        public void channelRead(ChannelHandlerContext ctx, Object msg) throws NoSuchMethodException {
-            // 首先做一次 decode 避免tcp粘包拆包问题，保证消息是完整的
-            ByteBuf buf = (ByteBuf) msg;
-            byte[] bytes = new byte[buf.readableBytes()];
-            buf.getBytes(buf.readerIndex(), bytes);
-            String requestMsg = new String(bytes, 0, buf.readableBytes());
-
-            ctx.fireChannelRead(buildInvocation(requestMsg));
-            // 然后交给接下来的Handler（RpcServerHandler）去处理
-        }
-
-        public Invocation buildInvocation(String requestMsg){
+        protected Invocation buildResult(String requestMsg) {
             String[] requests = requestMsg.split("\\s+");
             String serviceName = "";
             String methodName = "";
@@ -81,29 +42,11 @@ public class NettyCodecAdapter {
             }
             return new RpcInvocation(serviceName, methodName, argsList.toArray(), invokeId);
         }
+    };
 
-    }
-
-    private class ClientDecoder extends ChannelInboundHandlerAdapter{
-        /**
-         * 解码器，将msg解码为result
-         *
-         * @param ctx
-         * @param msg
-         */
+    private final ChannelHandler clientDecoder = new SimpleRpcDecoder() {
         @Override
-        public void channelRead(ChannelHandlerContext ctx, Object msg) throws NoSuchMethodException {
-            // decode 避免tcp粘包拆包问题，保证消息是完整的；
-            // 当然，这里的实现比较简单，实际情况下，会跟服务端约定一个结束符，用以标记消息已经读取完成
-            ByteBuf buf = (ByteBuf) msg;
-            byte[] bytes = new byte[buf.readableBytes()];
-            buf.getBytes(buf.readerIndex(), bytes);
-            String responseMsg = new String(bytes, 0, buf.readableBytes());
-
-            ctx.fireChannelRead(buildResult(responseMsg));
-        }
-
-        private Result buildResult(String responseMsg){
+        protected Invocation buildResult(String responseMsg) {
             String[] responses = responseMsg.split("\\s+");
             String result = "";
             String invokeId = "";
@@ -116,7 +59,72 @@ public class NettyCodecAdapter {
             }
             return new Result(invokeId, result);
         }
+    };
 
+    public ChannelHandler getSimpleRpcEncoder() {
+        return simpleRpcEncoder;
+    }
+
+    public ChannelHandler getServerDecoder() {
+        return serverDecoder;
+    }
+
+    public ChannelHandler getClientDecoder() {
+        return clientDecoder;
+    }
+
+    private class SimpleRpcEncoder extends MessageToByteEncoder {
+
+        @Override
+        protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) throws Exception {
+            byte[] payload = msg.toString().getBytes();
+            byte[] header = new byte[4];
+            header[3] = (byte) (payload.length & 0xFF);
+            header[2] = (byte) (payload.length >> 8 & 0xFF);
+            header[1] = (byte) (payload.length >> 16 & 0xFF);
+            header[0] = (byte) (payload.length >> 24 & 0xFF);
+            byte[] request = new byte[header.length + payload.length];
+            System.arraycopy(header, 0, request, 0, header.length);
+            System.arraycopy(payload, 0, request, header.length, payload.length);
+            out.writeBytes(request);
+        }
+    }
+
+    private abstract class SimpleRpcDecoder extends ByteToMessageDecoder {
+
+        /**
+         * 解码器，将msg解码为result
+         */
+        @Override
+        protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
+            // 首先做一次 decode 避免tcp粘包拆包问题，保证消息是完整的
+
+            // 判断可读长度是否大于header 的长度
+            if (in.readableBytes() < HEAD_LENGTH) {
+                return;
+            }
+
+            // 判断buffer中是否有足够的读取长度
+            in.markReaderIndex();
+
+            // 从buf中读取4个字节，正好为记录的当前payload的长度
+            int length = in.readInt();
+
+            // 如果没有足够长度，则重置当前索引回刚才标记的位置
+            if(in.readableBytes() < length) {
+                in.resetReaderIndex();
+                return;
+            }
+            // 将payload读取出来交给handler去处理
+            byte[] bytes = new byte[length];
+            in.readBytes(bytes);
+            String requestMsg = new String(bytes);
+
+            // 然后交给接下来的Handler（RpcServerHandler）去处理
+            out.add(buildResult(requestMsg));
+        }
+
+        protected abstract Invocation buildResult(String requestMsg);
     }
 
 }
