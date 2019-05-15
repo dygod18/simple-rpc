@@ -6,7 +6,7 @@
 - 第一步：clone代码到本地
 - 启动 com.wumu.rpc.simplerpc.boot.ServerBoot
 > 服务提供方，会默认提供一个HelloService。启动成功后可以看到server启动成功的log
-- 运营com.wumu.rpc.simplerpc.boot.ClientBoot
+- 运行com.wumu.rpc.simplerpc.boot.ClientBoot
 > 服务调用方，内部会轮询一千次调用HelloService的sayHello方法
 
 ### 服务调用流程图
